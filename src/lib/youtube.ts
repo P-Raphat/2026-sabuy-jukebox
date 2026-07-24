@@ -27,15 +27,42 @@ export function gradientFor(seed: string): string {
   return GRADIENTS[h];
 }
 
+// Max time to wait for a yt-dlp call before killing it. Prevents 90s hangs
+// when YouTube/DNS is unreachable (e.g. corporate network blocking).
+const YTDLP_TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS) || 20000;
+
 function run(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
+    const started = Date.now();
+    console.log("[yt-dlp] run:", args.join(" "));
     const p = spawn("yt-dlp", args, { windowsHide: true });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      p.kill();
+      console.error(`[yt-dlp] timeout after ${YTDLP_TIMEOUT_MS}ms:`, args.join(" "));
+    }, YTDLP_TIMEOUT_MS);
+
     p.stdout.on("data", (d) => (stdout += d.toString()));
     p.stderr.on("data", (d) => (stderr += d.toString()));
-    p.on("error", (e) => resolve({ code: -1, stdout, stderr: stderr + String(e) }));
-    p.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
+    p.on("error", (e) => {
+      clearTimeout(timer);
+      console.error("[yt-dlp] spawn error:", String(e));
+      resolve({ code: -1, stdout, stderr: stderr + String(e) });
+    });
+    p.on("close", (code) => {
+      clearTimeout(timer);
+      const ms = Date.now() - started;
+      if (timedOut) {
+        resolve({ code: -1, stdout, stderr: stderr + "\n[timeout]" });
+      } else {
+        console.log(`[yt-dlp] done in ${ms}ms code=${code}`);
+        resolve({ code: code ?? -1, stdout, stderr });
+      }
+    });
   });
 }
 
@@ -104,16 +131,20 @@ export type SearchResult = Meta;
 export async function search(query: string, limit = 5): Promise<SearchResult[]> {
   const q = query.trim();
   if (!q) return [];
-  const { code, stdout } = await run(["-J", "--flat-playlist", `ytsearch${limit}:${q}`]);
-  if (code !== 0 || !stdout.trim()) return [];
+  const { code, stdout, stderr } = await run(["-J", "--flat-playlist", `ytsearch${limit}:${q}`]);
+  if (code !== 0 || !stdout.trim()) {
+    console.warn(`[search] no output for "${q}" (code=${code}). stderr:`, stderr.slice(-300));
+    return [];
+  }
   let j: any;
   try {
     j = JSON.parse(stdout.trim());
-  } catch {
+  } catch (e) {
+    console.warn(`[search] JSON parse failed for "${q}":`, String(e));
     return [];
   }
   const entries: any[] = j.entries ?? [];
-  return entries
+  const out = entries
     .filter((e) => e && e.id && e.duration != null)
     .map((e) => ({
       youtubeId: e.id,
@@ -122,6 +153,8 @@ export async function search(query: string, limit = 5): Promise<SearchResult[]> 
       durationSec: Math.round(e.duration),
       thumbnail: e.thumbnails?.[0]?.url,
     }));
+  console.log(`[search] "${q}" → ${entries.length} raw, ${out.length} usable results`);
+  return out;
 }
 
 // Download + extract audio to <DOWNLOAD_DIR>/<id>.mp3, reporting 0-100 progress.

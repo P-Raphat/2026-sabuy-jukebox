@@ -34,6 +34,20 @@ input {
     transform: scaleY(1);
   }
 }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
 @keyframes pop {
   0% {
     transform: scale(0.7);

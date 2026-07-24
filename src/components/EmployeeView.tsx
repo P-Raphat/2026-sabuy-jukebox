@@ -12,6 +12,8 @@ export default function EmployeeView({ jb, flash }: { jb: Jb; flash: (m: string)
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searched, setSearched] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const layerRef = useRef<HTMLDivElement>(null);
 
   // Debounced realtime search.
@@ -20,15 +22,45 @@ export default function EmployeeView({ jb, flash }: { jb: Jb; flash: (m: string)
     if (q.length < 2) {
       setResults([]);
       setSearched(false);
+      setLoading(false);
+      setError(false);
       return;
     }
+    let cancelled = false;
     const t = setTimeout(async () => {
-      const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-      const j = await r.json().catch(() => ({ results: [] }));
-      setResults(j.results ?? []);
-      setSearched(true);
+      const t0 = performance.now();
+      setLoading(true);
+      setError(false);
+      console.debug(`[search] querying "${q}"…`);
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const j = await r.json().catch(() => ({ results: [] }));
+        if (cancelled) return;
+        const ms = Math.round(performance.now() - t0);
+        if (!r.ok || j.error) {
+          console.warn(`[search] failed (${r.status}) in ${ms}ms`, j.error);
+          setError(true);
+          setResults([]);
+        } else {
+          console.debug(`[search] "${q}" → ${j.results?.length ?? 0} results in ${ms}ms`);
+          setResults(j.results ?? []);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        console.error("[search] network error", e);
+        setError(true);
+        setResults([]);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setSearched(true);
+        }
+      }
     }, 350);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [query]);
 
   // Floating reaction emojis.
@@ -75,10 +107,17 @@ export default function EmployeeView({ jb, flash }: { jb: Jb; flash: (m: string)
       {/* input */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, background: "#2c2231", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: "6px 6px 6px 16px" }}>
         <span style={{ color: "#8f8195", display: "flex" }}>
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
-            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-            <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
+          {loading ? (
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" style={{ animation: "spin .8s linear infinite" }}>
+              <circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,.15)" strokeWidth="2.5" />
+              <path d="M12 3a9 9 0 0 1 9 9" stroke="#ff6b00" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+          ) : (
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+              <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          )}
         </span>
         <input
           value={query}
@@ -114,7 +153,27 @@ export default function EmployeeView({ jb, flash }: { jb: Jb; flash: (m: string)
           ))}
         </div>
       )}
-      {searched && results.length === 0 && (
+      {/* loading skeleton */}
+      {loading && results.length === 0 && (
+        <div style={{ marginTop: 10, background: "#241c2b", border: "1px solid rgba(255,255,255,.08)", borderRadius: 14, overflow: "hidden" }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderTop: i ? "1px solid rgba(255,255,255,.04)" : "none" }}>
+              <div style={{ width: 52, height: 38, borderRadius: 8, flex: "none", background: "rgba(255,255,255,.06)", animation: "pulse 1.2s ease-in-out infinite" }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ height: 11, width: "60%", borderRadius: 5, background: "rgba(255,255,255,.08)", animation: "pulse 1.2s ease-in-out infinite" }} />
+                <div style={{ height: 9, width: "35%", borderRadius: 5, background: "rgba(255,255,255,.05)", marginTop: 7, animation: "pulse 1.2s ease-in-out infinite" }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {/* network / search error */}
+      {error && !loading && (
+        <div style={{ marginTop: 10, padding: 16, textAlign: "center", color: "#ffb47d", fontSize: 13.5, background: "rgba(255,107,0,.08)", border: "1px solid rgba(255,107,0,.25)", borderRadius: 14 }}>
+          Couldn&rsquo;t reach YouTube — check your network and try again.
+        </div>
+      )}
+      {searched && !loading && !error && results.length === 0 && (
         <div style={{ marginTop: 10, padding: 16, textAlign: "center", color: "#9a8ca0", fontSize: 13.5, background: "#241c2b", border: "1px solid rgba(255,255,255,.06)", borderRadius: 14 }}>
           No matches for &ldquo;{query}&rdquo; — try another title.
         </div>
