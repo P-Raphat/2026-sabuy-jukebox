@@ -1,0 +1,17 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "file:/data/prod.db"
+      DOWNLOAD_DIR: "/data/downloads"
+      DOWNLOAD_CONCURRENCY: "3"
+      ADMIN_PASSWORD: "changeme" # override in production
+      PORT: "3000"
+    volumes:
+      - jukebox-data:/data
+    restart: unless-stopped
+
+volumes:
+  jukebox-data:

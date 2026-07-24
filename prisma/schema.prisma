@@ -1,0 +1,67 @@
+// SQLite + Prisma. Note: SQLite provider has no native enums — status fields are
+// plain strings with the allowed values documented inline.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Media {
+  id          String      @id @default(cuid())
+  youtubeId   String      @unique // cache key
+  title       String
+  channel     String
+  durationSec Int
+  thumbnail   String?
+  gradient    String? // UI accent, mirrors prototype look
+  filePath    String? // set once downloaded; null = not cached
+  fileSize    Int?
+  createdAt   DateTime    @default(now())
+  lastUsedAt  DateTime    @default(now())
+  queueItems  QueueItem[]
+}
+
+model QueueItem {
+  id           String   @id @default(cuid())
+  mediaId      String
+  media        Media    @relation(fields: [mediaId], references: [id])
+  ownerSession String // anonymous cookie id
+  requester    String // display name (prototype uses short names / "You")
+  position     Int
+  // status: downloading | ready | failed | playing | played | cancelled
+  status       String   @default("downloading")
+  progress     Int      @default(0) // 0-100
+  attempts     Int      @default(0)
+  error        String?
+  createdAt    DateTime @default(now())
+
+  @@index([status])
+  @@index([ownerSession])
+}
+
+// Single-row tables (id always 1) for global playback + config state.
+model NowPlaying {
+  id          Int       @id @default(1)
+  queueItemId String?
+  startedAt   DateTime?
+  paused      Boolean   @default(false)
+}
+
+model Setting {
+  id             Int     @id @default(1)
+  maxDurationMin Int     @default(10)
+  queueLimit     Int     @default(30)
+  perUserLimit   Int     @default(3)
+  autoCleanup    Boolean @default(true)
+}
+
+model PlaybackHistory {
+  id       String   @id @default(cuid())
+  mediaId  String
+  title    String
+  playedAt DateTime @default(now())
+}

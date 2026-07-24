@@ -34,3 +34,31 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# prisma / sqlite database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/prisma/*.db*
+
+# downloaded audio cache (DOWNLOAD_DIR)
+/downloads
+
+# docker volume mount
+/data
+
+# ide
+.vscode/
+.idea/
+*.swp
+
+# os
+Thumbs.db
+
+# logs
+logs
+*.log
+/Internal_Music_Queue_System_Design.md
+/Internal_Music_Queue_Server_Spec_v2.md
+/IMPLEMENTATION_PLAN.md
